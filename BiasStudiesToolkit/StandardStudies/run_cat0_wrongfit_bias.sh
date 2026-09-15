@@ -1,0 +1,56 @@
+#!/bin/bash
+# Opposite of run_cat0_fixedmodel_bias.sh: generate toys from the REAL
+# workspace (Datacard.root, cat0 fixed to flat0 -- what the analysis
+# actually assumes is true), then fit them forcing cat0 onto a DIFFERENT
+# fixed function (exp1 or pow1) from the standard 4-function envelope
+# workspace, while every other category floats normally in the fit (same
+# "wrongfit" convention as run_full_envelope_bias.sh --fit-mode wrongfit).
+# Tests: if flat0 really is correct, how much does r get biased by fitting
+# with the wrong fixed choice instead?
+set -e
+
+TRUTH_WS="Datacard.root"
+FIT_WS="Datacard_cat0truthstandard.root"
+OUTDIR="./bias_plots_cat0_wrongfit"
+mkdir -p "$OUTDIR"
+
+OTHER_SET="pdfindex_hgg_cat1_13TeV=2,pdfindex_hgg_cat2_13TeV=1,pdfindex_hgg_cat3_13TeV=2,pdfindex_hgg_cat4_13TeV=4"
+OTHER_FREEZE="pdfindex_hgg_cat1_13TeV,pdfindex_hgg_cat2_13TeV,pdfindex_hgg_cat3_13TeV,pdfindex_hgg_cat4_13TeV"
+
+declare -A IDX=( [exp1]=1 [pow1]=2 )
+NTOYS=1000
+SEED=123456
+
+run_one() {
+    local wrong_func="$1" r_truth="$2"
+    local idx="${IDX[$wrong_func]}"
+    local name="cat0_wrongfit_flat0_as_${wrong_func}_r${r_truth}"
+
+    combine "$TRUTH_WS" -M GenerateOnly -m 125 -t $NTOYS -s $SEED -n ".gen_${name}" \
+        --expectSignal "${r_truth}" \
+        --setParameters "${OTHER_SET}" \
+        --freezeParameters "MH,${OTHER_FREEZE}" \
+        --cminDefaultMinimizerStrategy 0 --rMin -5 --rMax 5 --saveToys \
+        > "combine_gen_${name}.log" 2>&1
+
+    combine -M FitDiagnostics "$FIT_WS" -m 125 -t $NTOYS -s $SEED -n ".fit_${name}" \
+        --expectSignal "${r_truth}" \
+        --toysFile "higgsCombine.gen_${name}.GenerateOnly.mH125.${SEED}.root" \
+        --setParameters "pdfindex_hgg_cat0_13TeV=${idx}" \
+        --freezeParameters "MH,pdfindex_hgg_cat0_13TeV" \
+        --cminDefaultMinimizerStrategy 0 --robustFit 1 \
+        --rMin -5 --rMax 5 \
+        > "combine_fit_${name}.log" 2>&1
+
+    python3 ../plot_bias_pull_FitDiagnostics.py -i "fitDiagnostics.fit_${name}.root" \
+        --r-truth "${r_truth}" --truth-func flat0 --fit-func "wrongfit_${wrong_func}" \
+        --cat "${name}" -o "$OUTDIR"
+}
+
+for wrong_func in exp1 pow1; do
+    for r_truth in 0 2; do
+        run_one "$wrong_func" "$r_truth" &
+    done
+done
+wait
+echo "=== done, see $OUTDIR/pull_summary.json ==="

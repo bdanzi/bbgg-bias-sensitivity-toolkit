@@ -1,0 +1,24 @@
+# Analysis outputs (ROOT files, toys, fits, plots, logs) never belong in
+# this repo -- these scripts are meant to be run against your own datacard,
+# producing your own run directory (see each toolkit's README).
+*.root
+*.log
+*.log~
+*.out
+*.png
+*.pdf
+*.pkl
+*.json
+*.parquet
+*.csv
+*~
+\#*\#
+.disk_test.tmp
+
+__pycache__/
+*.pyc
+
+# setup_new_run.sh-bootstrapped run instances (datacard-specific, not code)
+datacard_*/
+packaged_datacard_*/
+Models_*/
