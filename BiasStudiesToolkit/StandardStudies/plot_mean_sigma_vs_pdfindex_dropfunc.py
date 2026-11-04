@@ -10,6 +10,7 @@ by resolve_pdfindex_legs.py against the ORIGINAL, unmasked Datacard.root
 """
 import glob
 import json
+import os
 import re
 import subprocess
 
@@ -34,13 +35,15 @@ plt.rcParams.update({
 LUMI_LABEL = "421 fb$^{-1}$ (13 TeV + 13.6 TeV)"
 
 WS = "Datacard.root"
+CAT0_WS = "Datacard_cat0truthstandard.root"
+CAT0_JSON = "bias_plots_cat0_fixedmodel_default0/pull_summary.json"
 
 CAT_RE = re.compile(r"bias_plots_dropfunc_cat(\d+)$")
 
 
-def resolve_pdfindex_map(cat_number):
+def resolve_pdfindex_map(cat_number, ws=WS):
     out = subprocess.run(
-        ["python3", "resolve_pdfindex_legs.py", WS, str(cat_number)],
+        ["python3", "resolve_pdfindex_legs.py", ws, str(cat_number)],
         capture_output=True, text=True, check=True,
     ).stdout
     mapping = {}
@@ -58,17 +61,29 @@ def main():
         if (m := CAT_RE.match(d))
     )
 
+    entries_map = {}
+    for cat in cats:
+        idx_map = resolve_pdfindex_map(cat)
+        with open(f"bias_plots_dropfunc_cat{cat}/pull_summary.json") as f:
+            entries_map[cat] = (idx_map, json.load(f))
+
+    if os.path.exists(CAT0_JSON):
+        with open(CAT0_JSON) as f:
+            cat0_entries = json.load(f)
+        if cat0_entries:
+            entries_map[0] = (resolve_pdfindex_map(0, ws=CAT0_WS), cat0_entries)
+
+    ordered_cats = ([0] if 0 in entries_map else []) + cats
+
     fig, axes = plt.subplots(1, 2, figsize=(16, 7), sharey=True)
     r_values = [0.0, 2.0]
     colors = plt.cm.tab10.colors
-    n_cats = len(cats)
+    n_cats = len(ordered_cats)
     jitter_width = 0.5
 
-    for cat_i, cat in enumerate(cats):
+    for cat_i, cat in enumerate(ordered_cats):
         jitter = (cat_i - (n_cats - 1) / 2) * (jitter_width / max(n_cats - 1, 1))
-        idx_map = resolve_pdfindex_map(cat)
-        with open(f"bias_plots_dropfunc_cat{cat}/pull_summary.json") as f:
-            entries = json.load(f)
+        idx_map, entries = entries_map[cat]
 
         for ax, r_truth in zip(axes, r_values):
             pts = [e for e in entries if e["r_truth"] == r_truth]
@@ -98,13 +113,13 @@ def main():
             xs_jit = [x + jitter for x in xs]
             ax.errorbar(
                 xs_jit, ys, yerr=yerr, fmt="o", capsize=4, ms=6,
-                color=colors[(cat - 1) % len(colors)],
+                color=colors[cat_i % len(colors)],
                 label=f"cat{cat}",
             )
             for x, y, lab in zip(xs_jit, ys, labels):
                 ax.annotate(lab, (x, y), textcoords="offset points",
                             xytext=(0, 8 + 10 * cat_i), ha="center", fontsize=6.5,
-                            color=colors[(cat - 1) % len(colors)])
+                            color=colors[cat_i % len(colors)])
 
     for ax, r_truth in zip(axes, r_values):
         ax.axhline(0.0, color="gray", ls="--", lw=1)

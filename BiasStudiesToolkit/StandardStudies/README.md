@@ -233,3 +233,37 @@ parameter to seed the initial fit. `SummaryBiasSignificance.py` writes
 `fixed` vs `envelope` vs the Gaussian expectation. Envelope tracking above the
 `fixed`/Gaussian curves by more than ~10-20% indicates the discrete profiling
 is inflating significance (i.e. injecting bias / look-elsewhere-like effect).
+
+### 5. Follow-up checks used for the v7 final results
+
+These scripts were added for the v7 final datacard
+(`v7_SnTV7F1E500T0821thTest_resample_DDonly_min`) and assume its category
+layout (cat0 boosted with a single fixed function, cat1-4 with a
+`RooMultiPdf` envelope). Run them from the bootstrapped run directory.
+
+- **cat0 fixed model.** `run_cat0_fixedmodel_bias.sh` /
+  `run_cat0_fixedmodel_bias_default0.sh` test truth = exp1/pow1;
+  `run_cat0_fixedmodel_bias_extra.sh` / `run_cat0_fixedmodel_bias_default0_extra.sh`
+  add the missing truth = bern1/lau1 and append to the same
+  `pull_summary.json`. Other categories are frozen to their best-fit index
+  (`bestfit`) or to index 0 (`default0`). Summary plots:
+  `plot_mean_sigma_vs_pdfindex_cat0_bestfit.py`,
+  `plot_mean_sigma_vs_pdfindex_cat0_default0.py`.
+- **dropfunc summaries.** `plot_mean_sigma_vs_pdfindex_dropfunc.py` and
+  `plot_mean_sigma_vs_pdfindex_dropfunc_bestfit.py` now include cat0 (read
+  from the cat0 fixed-model `pull_summary.json`) as the first panel when it
+  exists. The `_bestfit` variant reads the published `pull_summary.json`
+  files under `~/public_html`.
+- **cat1 checks.** `run_cat1_standalone_check.sh` (cat1 workspace alone),
+  `run_cat1_altws_gen_nofreezeothers.sh` + `run_cat1_altws_nofreezeothers.sh`
+  (alternative workspace, other categories not frozen; set `ALTWS=` to point
+  to it) and the pull summaries `make_pull_summary_cat1_envelope.py` /
+  `make_pull_summary_cat1_reproducibility_check.py` (pull =
+  (r - r_inj) / ((|rLoErr| + |rHiErr|) / 2), fixed Gaussian range [-2, 2]).
+
+`plot_bias_pull_FitDiagnostics.py` draws the fitted Gaussian on a clone over
+the full window (the previous version clipped the curve at the core-fit
+range) and, for r_truth != 0, reuses the core-fit window of the r_truth = 0
+plot of the same truth/fit combination (cached in
+`<outdir>/.core_range_cache.json`), so plots at different injected r are
+directly comparable. Run the r = 0 case first.

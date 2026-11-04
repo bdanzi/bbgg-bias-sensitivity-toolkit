@@ -78,8 +78,6 @@ if args.r_max is not None:
 t.Draw(todraw, base_cut, "goff")
 
 canv = ROOT.TCanvas("c", "c", 800, 600)
-canv.SetGridx()
-canv.SetGridy()
 hist_pull.Draw("E")
 
 maxX = 5.0
@@ -93,27 +91,59 @@ fg.SetLineWidth(2)
 # seed with a wide fit, then iteratively refit restricted to the core
 # (+-core_width sigma around the current estimate) until it converges, so the
 # reported mean/sigma reflect the bulk of the toys rather than the tails.
-hist_pull.Fit(fg, "LRQ0", "", -maxX, maxX)
-core_width = 2.0
-mean_est, sigma_est = fg.GetParameter(1), fg.GetParameter(2)
-for _ in range(5):
-    if sigma_est <= 0:
-        break
-    lo, hi = mean_est - core_width * sigma_est, mean_est + core_width * sigma_est
-    hist_pull.Fit(fg, "LRQ0", "", lo, hi)
-    new_mean, new_sigma = fg.GetParameter(1), fg.GetParameter(2)
-    if abs(new_mean - mean_est) < 1e-3 and abs(new_sigma - sigma_est) < 1e-3:
-        mean_est, sigma_est = new_mean, new_sigma
-        break
-    mean_est, sigma_est = new_mean, new_sigma
+#
+# This adaptive window converges to a different [lo, hi] per r_truth (r0 vs
+# r2 have different toy spreads), which makes the two plots for the same
+# truth/fit combo look inconsistent side by side even though nothing is
+# wrong. To keep every injected-r variant visually consistent with its r=0
+# baseline, r=0 computes the window as before and caches it; any other r
+# reuses that cached window instead of re-deriving its own.
+import re
+core_range_cache_path = os.path.join(args.outdir, ".core_range_cache.json")
+core_range_key = re.sub(r'_r-?\d+$', '', args.cat) + f"|{args.truth_func}|{args.fit_func}"
+try:
+    with open(core_range_cache_path) as _fh:
+        core_range_cache = json.load(_fh)
+except (FileNotFoundError, json.JSONDecodeError):
+    core_range_cache = {}
 
-# Final (non-quiet) fit over the converged core range, so the stat box shows a
-# meaningful chi2/ndf computed only over the region the Gaussian actually
-# describes, then widen the function's drawing range back to the full window
-# so the curve still spans the whole plot using those fitted parameters.
-lo, hi = mean_est - core_width * sigma_est, mean_est + core_width * sigma_est
-hist_pull.Fit(fg, "LR", "", lo, hi)
-fg.SetRange(-maxX, maxX)
+core_width = 2.0
+if r_in == 0 or core_range_key not in core_range_cache:
+    hist_pull.Fit(fg, "LRQ0", "", -maxX, maxX)
+    mean_est, sigma_est = fg.GetParameter(1), fg.GetParameter(2)
+    for _ in range(5):
+        if sigma_est <= 0:
+            break
+        lo, hi = mean_est - core_width * sigma_est, mean_est + core_width * sigma_est
+        hist_pull.Fit(fg, "LRQ0", "", lo, hi)
+        new_mean, new_sigma = fg.GetParameter(1), fg.GetParameter(2)
+        if abs(new_mean - mean_est) < 1e-3 and abs(new_sigma - sigma_est) < 1e-3:
+            mean_est, sigma_est = new_mean, new_sigma
+            break
+        mean_est, sigma_est = new_mean, new_sigma
+    lo, hi = mean_est - core_width * sigma_est, mean_est + core_width * sigma_est
+    if r_in == 0:
+        core_range_cache[core_range_key] = [lo, hi]
+        with open(core_range_cache_path, "w") as _fh:
+            json.dump(core_range_cache, _fh)
+else:
+    # Reuse the r=0 study's converged core-fit window for this same combo.
+    lo, hi = core_range_cache[core_range_key]
+
+# Final fit over the (shared) core range, so the stat box shows a meaningful
+# chi2/ndf computed only over the region the Gaussian actually describes.
+# Drawn with "0" (no auto-draw of the core-range-only curve) - TF1.SetRange()
+# on a TF1 already added to the histogram's function list does NOT
+# retroactively widen what gets painted (verified: the curve was being
+# hard-clipped exactly at the core-fit boundary, not just fading out
+# mathematically), so instead draw a separate clone spanning the full window
+# with the same fitted parameters.
+hist_pull.Fit(fg, "LR0", "", lo, hi)
+fg_full = fg.Clone("fg_full")
+fg_full.SetRange(-maxX, maxX)
+fg_full.SetLineColor(2)
+fg_full.SetLineWidth(2)
+fg_full.Draw("same")
 print(f"--> Core-fit range used: [{lo:.2f}, {hi:.2f}], chi2/ndf = {fg.GetChisquare():.1f}/{fg.GetNDF()}")
 
 outname = f"{args.outdir}/pull_{args.cat}_truth_{args.truth_func}_fit_{args.fit_func}_r{int(r_in)}.png"

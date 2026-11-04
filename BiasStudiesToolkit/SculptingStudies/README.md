@@ -81,3 +81,30 @@ closure and a non-zero `r` matching the expected signal yield). `plot_bias_pull.
 fits a Gaussian to `Pull = (r_truth - r_fit) / sigma_fit`: a mean significantly
 away from 0 indicates the analytic envelope is sculpting the true background
 shape and biasing `r`.
+
+## Combined and per-category masked sculpting (v7 final)
+
+Instead of the per-category hand-split workflow above, the sculpting test
+can be run on the full multi-category datacard:
+
+```bash
+# Truth workspace: every category bkg/data shape replaced by the
+# GGJets+DDQCDGJets+TTGG MC template (RooHistPdf), rest of the card untouched.
+python3 build_combined_truth_workspace.py Datacard_2016-2025_allcats_final.txt \
+    --parquet /path/to/merged_scored_events.parquet -o datacard_combined_truth.txt
+
+# text2workspace both cards with --channel-masks into
+# ws_truth_combined_masked.root / ws_fit_combined_masked.root, then
+# one category at a time (others masked, their pdfindex frozen):
+./run_percat_masked.sh <cat>          # r_truth = 0
+./run_percat_masked_r.sh <cat> <r>    # injected r_truth
+
+python3 plot_rfit_rerr.py -i fitDiagnostics.<name>.root --r-truth 0 --cat <name>
+python3 plot_summary_combined_sculpting.py
+```
+
+`plot_rfit_rerr.py` shows r_fit and its error on their own scale (same toy
+quality cuts as the pull plot). The category selection cuts in
+`build_combined_truth_workspace.py` are those of the v7 final categories:
+update them for a new categorisation. `plot_summary_combined_sculpting.py`
+holds the per-r pull mean/sigma transcribed from the combined pull plots.
