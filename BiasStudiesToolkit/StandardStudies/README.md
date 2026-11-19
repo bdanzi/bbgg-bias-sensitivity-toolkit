@@ -275,6 +275,7 @@ This is how the v7 final summary
 was produced. Everything runs from the bootstrapped run directory, on the
 combined workspace **without channel masks**: one category J is perturbed at a
 time, the fit uses all categories, so `r` is the combined signal strength.
+How the dropfunc check works step by step: section 7.
 
 ```bash
 # 0. Combined workspace + best-fit pdfindex of every category on data
@@ -316,3 +317,94 @@ Notes:
   it (`create_table.py` makes the truth-vs-fit matrix table of section 1).
 - Still open: `run_cat0_wrongfit_bias*.sh` (truth = cat0 fixed function, fit
   forced on a wrong one) was never completed or published.
+
+### 7. The dropfunc check in detail
+
+**Question it answers.** With discrete profiling, the fit can only choose
+among the functions in the envelope. If the true background shape is *not*
+one of them, how much is `r` biased? The dropfunc check makes this happen
+on purpose: toys are generated from function `i` in category J, and the fit
+is done on a workspace where `i` has been **removed** from category J's
+`RooMultiPdf`, so the fit can never pick the truth.
+
+Compare with the other checks of this README:
+
+| Check | Truth in the fit envelope? | Fit pdfindex of cat J |
+|---|---|---|
+| envelope (sections 2, 3) | yes | floating |
+| wrongfit (section 3) | yes, but not reachable | frozen to a wrong function k != i |
+| **dropfunc** | **no** | floating among the remaining functions |
+
+wrongfit only tests a fit stuck on the wrong function; dropfunc tests an
+envelope that is an incomplete set of shapes, which is the realistic worry
+on data.
+
+**What `run_dropfunc_envelope_bias.sh --cat catJ` does**, for each truth
+function `i` in {exp1, bern1, bern2, bern3, pow1, lau1, lau2} that cat J
+actually has (others are skipped; `bern1` also matches a `flat0` pdf):
+
+1. *Find cat J's envelope.* Reads the datacard line
+   `shapes bkg_mass catJ <file> multipdf:<name>` to get the raw per-category
+   multipdf file and the pdf name (categories may point to different
+   directories, e.g. `background` vs `background_boosted`, so nothing is
+   hard-coded). `resolve_pdfindex_legs.py` maps function names to pdfindex
+   values in the combined workspace.
+2. *Remove function i.* `build_dropfunc_workspace.py` rebuilds that
+   per-category file with `i` taken out of the `RooMultiPdf`, keeping every
+   object name (workspace `multipdf`, pdf, `pdfindex`, `_norm`) unchanged.
+   Output: `dropfunc_workspaces/<file>_drop_<i>.root`.
+   `visualize_envelope_drop.py` plots the envelope before/after the drop
+   (fit to data) if you want to look at it.
+3. *Patch the datacard.* `patch_datacard_dropfunc.py` copies the datacard and
+   changes only the file path on cat J's `bkg_mass` shapes line (its
+   `data_obs` line and all other categories are untouched):
+   `<datacard>_catJ_drop_<i>.txt`, then `text2workspace.py` ->
+   `<datacard>_catJ_drop_<i>.root`. Steps 2-3 are cached: existing files
+   are reused.
+4. *Generate* on the **original** combined workspace (`--ws`), no channel
+   masks: cat J pdfindex set + frozen to `i`; every other category set +
+   frozen to its best-fit index on data (from `bestfit_pdfindices.sh`, see
+   section 6 step 0). `GenerateOnly`, `--expectSignal r_truth`,
+   `--saveToys`.
+5. *Fit* the same toys on the **reduced** workspace with `FitDiagnostics`,
+   only `MH` frozen: every pdfindex floats, including cat J among its
+   remaining functions. `--robustFit 1 --cminDefaultMinimizerStrategy 0`.
+6. *Pull.* `plot_bias_pull_FitDiagnostics.py` with
+   `--fit-func envelope_minus_<i>`:
+   - toys kept if `fit_status` is 0 or 300 and both `rLoErr`, `rHiErr` > 0.05;
+   - pull = (r - r_truth) / sigma, with sigma = `rLoErr` if r > r_truth,
+     `rHiErr` otherwise, or their average if the two differ by more than a
+     factor 3;
+   - Gaussian fit in an iterative core window (mean +- 2 sigma; for
+     r_truth != 0 the window of the r_truth = 0 plot is reused, so run r = 0
+     first). The fit is drawn over the full [-5, 5] range.
+   - Each (i, r_truth) appends one entry to
+     `bias_plots_dropfunc_catJ/pull_summary.json` (`mean_pull`,
+     `median_pull`, `rms_pull`, `fit_mean`, `fit_sigma`, `n_toys`).
+
+Defaults: 1000 toys, seed 123456, r_truth = 0 and 2, `--rMin -5 --rMax 5`.
+Useful options: dry run without `--run` (still builds the reduced
+workspaces so you can inspect them), `--parallel` (all GEN+FIT jobs at
+once; plotting stays sequential because all entries go to the same JSON),
+`--truth-funcs` / `--r-values` (fill in missing combinations),
+`--publish` (copies plots + JSON to
+`~/public_html/BiasSensitivityStudies_v7_final_dropfunc_<cat>_rMin<X>rMax<Y>_<N>toys/StandardStudies_dropfunc/`).
+`--stability-flags` is off by default because
+`MINIMIZER_freezeDisassociatedParams` makes FitDiagnostics segfault on this
+analysis. `--leg hbb` (2D categories) has never been tested on a real
+two-leg workspace.
+
+**Reading the result.** `fit_mean` of the pull is the bias in units of the
+statistical uncertainty on `r`; `fit_sigma` close to 1 means the
+uncertainty is correctly estimated. The summary plots (section 6, step 3)
+show `fit_mean` +- `fit_sigma` vs the pdfindex of the removed function,
+per category, for r_truth = 0 and 2. In the v7 final AN table the bias is
+quoted as max and mean |`fit_mean`| per category in %.
+
+**cat0** has a single fixed function, so there is nothing to drop: it is
+covered by the fixed-model check (section 5), and shown as the first panel
+of the dropfunc summary plots.
+
+Note: the dropfunc runner does not pass `--r-min/--r-max` to the plotting
+script, so toys with `r` stuck at the boundary are not removed there (the
+error cuts above still apply).
