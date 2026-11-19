@@ -406,5 +406,7 @@ covered by the fixed-model check (section 5), and shown as the first panel
 of the dropfunc summary plots.
 
 Note: the dropfunc runner does not pass `--r-min/--r-max` to the plotting
-script, so toys with `r` stuck at the boundary are not removed there (the
-error cuts above still apply).
+script. This has no effect: toys with `r` stuck at rMin/rMax (~2%) always
+have a near-zero error on that side and are already removed by the
+`rLoErr, rHiErr > 0.05` cut (checked on the v7 final outputs: identical
+`fit_mean`, `fit_sigma` and toy counts with and without the boundary cut).
