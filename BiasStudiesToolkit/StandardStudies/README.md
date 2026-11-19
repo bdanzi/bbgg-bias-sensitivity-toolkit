@@ -267,3 +267,52 @@ range) and, for r_truth != 0, reuses the core-fit window of the r_truth = 0
 plot of the same truth/fit combination (cached in
 `<outdir>/.core_range_cache.json`), so plots at different injected r are
 directly comparable. Run the r = 0 case first.
+
+### 6. Final summary (dropfunc + cat0 fixed model)
+
+This is how the v7 final summary
+(`~/public_html/BiasSensitivityStudies_v7_final_summary_rMin-5rMax5_1000toys/StandardStudies_summary/`)
+was produced. Everything runs from the bootstrapped run directory, on the
+combined workspace **without channel masks**: one category J is perturbed at a
+time, the fit uses all categories, so `r` is the combined signal strength.
+
+```bash
+# 0. Combined workspace + best-fit pdfindex of every category on data
+#    (writes higgsCombine_initial.MultiDimFit.mH125.root, then cached by
+#    get_bestfit_pdfindices.py into bestfit_pdfindices.sh on first use).
+text2workspace.py Datacard.txt -m 125 -o Datacard.root
+python3 RunBiasInSignificance.py --inputWSFile Datacard.root --mode setup \
+    --initial-fit-param <low_impact_nuisance_name>
+
+# 1. dropfunc, cat1-4: truth function i generated in cat J, then REMOVED from
+#    the RooMultiPdf of cat J before the fit (truth not in the envelope).
+#    Other categories: set + frozen to their data best-fit index.
+#    Defaults: 1000 toys, r_truth = 0,2, rMin/rMax = -5/5. Dry run without --run.
+for c in cat1 cat2 cat3 cat4; do
+    ./run_dropfunc_envelope_bias.sh --ws Datacard.root --datacard Datacard.txt \
+        --cat $c --run --parallel --publish
+done
+#    -> bias_plots_dropfunc_<cat>/pull_summary.json + pull_*.png
+
+# 2. cat0 (single fixed function, nothing to drop): toys from its standard
+#    4-function envelope, fit with cat0 fixed (see section 5).
+./run_cat0_fixedmodel_bias.sh          && ./run_cat0_fixedmodel_bias_extra.sh
+./run_cat0_fixedmodel_bias_default0.sh && ./run_cat0_fixedmodel_bias_default0_extra.sh
+
+# 3. Summary plots: pull mean/sigma vs truth pdfindex, cat0 first, then cat1-4.
+python3 plot_mean_sigma_vs_pdfindex_dropfunc_bestfit.py   # reads the published dropfunc/cat0 pull_summary.json
+python3 plot_mean_sigma_vs_pdfindex_dropfunc.py           # reads local bias_plots_dropfunc_cat*/ (default0 runs)
+python3 plot_mean_sigma_vs_pdfindex_cat0_bestfit.py
+python3 plot_mean_sigma_vs_pdfindex_cat0_default0.py
+```
+
+Notes:
+- The `default0` dropfunc results (other categories at pdfindex 0, published
+  in `..._dropfunc_cat*_default0_...`) come from an earlier pass of
+  `run_dropfunc_envelope_bias.sh`; the current script always freezes the
+  other categories to their best-fit index.
+- The AN table `bias_tests_dropfunc_cat0.tex` in the summary page was written
+  by hand from the `pull_summary.json` files; no script in this repo produces
+  it (`create_table.py` makes the truth-vs-fit matrix table of section 1).
+- Still open: `run_cat0_wrongfit_bias*.sh` (truth = cat0 fixed function, fit
+  forced on a wrong one) was never completed or published.

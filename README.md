@@ -10,7 +10,8 @@ modeled with a `RooMultiPdf` discrete-profiling envelope.
   which background function generated the data vs. which one is used to
   fit it? Two independent studies, see
   [`BiasStudiesToolkit/README.md`](BiasStudiesToolkit/README.md):
-  - `StandardStudies/` — discrete-profiling (envelope) bias: truth-vs-fit
+  - `StandardStudies/` — discrete-profiling (envelope) bias (recipe for the
+    final dropfunc summary: section 6 of its README): truth-vs-fit
     function matrices, masked/full-workspace envelope checks, "wrongfit"
     and "dropfunc" (truth function genuinely absent from the envelope)
     variants, and fixed-vs-envelope spurious-signal checks.
